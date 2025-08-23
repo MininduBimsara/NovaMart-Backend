@@ -1,0 +1,60 @@
+[
+  {
+    "collection": "users",
+    "documents": [
+      {
+        "username": "admin",
+        "email": "admin@example.com",
+        "password": "$2a$10$7q3z0iJ5b6Ei8J0bH0H5EeR8qh9aB3r0aE3lq6gT7kLZP1QmBvI6e", 
+        "roles": ["ROLE_ADMIN"],
+        "name": "Administrator",
+        "contactNumber": "+1234567890",
+        "country": "USA",
+        "createdAt": { "$date": "2023-01-01T00:00:00Z" },
+        "updatedAt": { "$date": "2023-01-01T00:00:00Z" }
+      },
+      {
+        "username": "user1",
+        "email": "user1@example.com",
+        "password": "$2a$10$8QGqN1nmv5uQvYHeH.l4uO0bKk8OlAyxYVgD9VjN4lC2YwoR8Ug8S", 
+        "roles": ["ROLE_USER"],
+        "name": "User One",
+        "contactNumber": "+1987654321",
+        "country": "USA",
+        "createdAt": { "$date": "2023-01-02T00:00:00Z" },
+        "updatedAt": { "$date": "2023-01-02T00:00:00Z" }
+      }
+    ]
+  },
+  {
+    "collection": "products",
+    "documents": [
+      {
+        "name": "Smartphone X100",
+        "description": "Latest smartphone with advanced features",
+        "price": 699.99,
+        "availableQuantity": 50,
+        "category": "Electronics",
+        "createdAt": { "$date": "2023-01-05T00:00:00Z" },
+        "updatedAt": { "$date": "2023-01-05T00:00:00Z" }
+      },
+      {
+        "name": "Wireless Headphones",
+        "description": "Noise-cancelling wireless headphones",
+        "price": 149.99,
+        "availableQuantity": 100,
+        "category": "Audio",
+        "createdAt": { "$date": "2023-01-06T00:00:00Z" },
+        "updatedAt": { "$date": "2023-01-06T00:00:00Z" }
+      }
+    ]
+  },
+  {
+    "collection": "carts",
+    "documents": []
+  },
+  {
+    "collection": "orders",
+    "documents": []
+  }
+]

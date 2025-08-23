@@ -1,0 +1,41 @@
+To run the Spring Boot 3+ e-commerce backend application you asked for, follow these steps:
+
+Prerequisites
+Java 17 JDK installed and configured (java command available)
+Maven installed and configured (mvn command available)
+MongoDB up and running (local or remote)
+Apache Tomcat 10+ server installed (if deploying WAR)
+Proper configuration of environment variables or application.properties with your MongoDB URI and Asgardeo OIDC details
+Running the Application
+Option 1: Run as a Spring Boot standalone application (for development)
+Open a terminal or command prompt.
+Navigate to the project root directory (where pom.xml is located).
+Run the following Maven command to build and run the app directly:
+ copy
+javascript
+
+mvn clean spring-boot:run
+The application will start on the default port 8080 (you can configure this in application.properties).
+Access the API or Swagger UI at: http://localhost:8080/swagger-ui.html
+Option 2: Build WAR and deploy on Apache Tomcat (production-like)
+Build the WAR file:
+ copy
+javascript
+
+mvn clean package
+The WAR file will be generated in the target/ directory, e.g. ecommerce-backend-1.0.0.war.
+Copy the WAR file to the webapps folder of your Tomcat 10+ installation.
+Start Tomcat server (if not already running).
+Tomcat will deploy the WAR automatically.
+Access the application at http://localhost:8080/ecommerce-backend (or your configured context path).
+Swagger UI will be available at http://localhost:8080/ecommerce-backend/swagger-ui.html.
+Additional Notes
+Ensure MongoDB connection string and OIDC issuer URI and client credentials are correctly set in src/main/resources/application.properties or via environment variables.
+For production, configure HTTPS for security.
+Logs will appear in the console or configured log files.
+You can run tests with:
+ copy
+javascript
+
+mvn test
+If you want, I can help you with the exact commands or environment variable settings. Let me know!
