@@ -26,8 +26,8 @@ public class OrderDTO {
     @DecimalMin(value = "0.0", inclusive = true, message = "Total amount must be non-negative")
     private BigDecimal totalAmount;
 
-    @OrderStatus
-    private String status;
+
+    private OrderStatus status;
 
     @Data
     public static class OrderItemDTO {
