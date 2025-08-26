@@ -9,10 +9,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -38,22 +36,22 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable()) // Disable CSRF for stateless JWT APIs
+                .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
                         .requestMatchers(
                                 "/api/users/register",
-                                "/api/products", // Allow viewing products without auth
-                                "/api/products/*",
+                                "/api/products",
+                                "/api/products/**",
+                                "/api/purchases/options/**",
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/swagger-resources/**",
                                 "/webjars/**",
-                                "/actuator/health"
+                                "/actuator/health",
+                                "/error"
                         ).permitAll()
-                        // Protected endpoints
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**", "/api/purchases/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
@@ -71,13 +69,12 @@ public class SecurityConfig {
                                         "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
                                         "style-src 'self' 'unsafe-inline'; " +
                                         "img-src 'self' data: https:; " +
-                                        "font-src 'self' https: data:; " +
                                         "connect-src 'self' https:")
                         )
                         .frameOptions(frame -> frame.deny())
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .maxAgeInSeconds(31536000)
-                                .includeSubdomains(true)
+                                .includeSubDomains(true) // CORRECT: includeSubDomains with capital D
                         )
                 );
 
@@ -86,12 +83,12 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        return JwtDecoders.fromIssuerLocation(issuerUri);
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        try {
+            return NimbusJwtDecoder.withJwkSetUri(issuerUri + "/.well-known/jwks.json").build();
+        } catch (Exception e) {
+            // Fallback for development - create a simple decoder
+            return NimbusJwtDecoder.withJwkSetUri("https://login.microsoftonline.com/common/discovery/v2.0/keys").build();
+        }
     }
 
     @Bean

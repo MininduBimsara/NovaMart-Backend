@@ -49,9 +49,9 @@ public class RateLimitingFilter implements Filter {
             // Request allowed
             chain.doFilter(request, response);
         } else {
-            // Rate limit exceeded
+            // Rate limit exceeded - use 429 status code
             logger.warn("Rate limit exceeded for IP: {}", clientIp);
-            httpResponse.setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+            httpResponse.setStatus(429); // 429 Too Many Requests
             httpResponse.setContentType("application/json");
             httpResponse.getWriter().write(
                     "{\"error\": \"Too many requests\", \"message\": \"Rate limit exceeded. Try again later.\"}"

@@ -3,6 +3,7 @@ package com.ecommerce.service.impl;
 import com.ecommerce.domain.Purchase;
 import com.ecommerce.dto.PurchaseDTO;
 import com.ecommerce.exception.CustomBusinessException;
+import com.ecommerce.repository.PurchaseRepository;
 import com.ecommerce.service.PurchaseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
