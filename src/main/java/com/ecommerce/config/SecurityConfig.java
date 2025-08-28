@@ -29,6 +29,9 @@ public class SecurityConfig {
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuerUri;
 
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
+    private String jwkSetUri;
+
     @Value("${cors.allowed-origins:http://localhost:3000}")
     private String allowedOrigins;
 
@@ -40,6 +43,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
+                        // Public endpoints
                         .requestMatchers(
                                 "/api/users/register",
                                 "/api/products",
@@ -51,9 +55,13 @@ public class SecurityConfig {
                                 "/swagger-resources/**",
                                 "/webjars/**",
                                 "/actuator/health",
-                                "/error"
+                                "/error",
+                                "/login/**",
+                                "/oauth2/**"
                         ).permitAll()
+                        // Admin endpoints
                         .requestMatchers("/api/admin/**", "/api/purchases/admin/**").hasRole("ADMIN")
+                        // All other requests need authentication
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
@@ -76,7 +84,7 @@ public class SecurityConfig {
                         .frameOptions(frame -> frame.deny())
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .maxAgeInSeconds(31536000)
-                                .includeSubDomains(true) // CORRECT: includeSubDomains with capital D
+                                .includeSubDomains(true)
                         )
                 );
 
@@ -91,10 +99,18 @@ public class SecurityConfig {
     @Bean
     public JwtDecoder jwtDecoder() {
         try {
-            return NimbusJwtDecoder.withJwkSetUri(issuerUri + "/.well-known/jwks.json").build();
+            // Primary: Use the configured JWK Set URI
+            return NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
+                    .build();
         } catch (Exception e) {
-            // Fallback for development - create a simple decoder
-            return NimbusJwtDecoder.withJwkSetUri("https://login.microsoftonline.com/common/discovery/v2.0/keys").build();
+            try {
+                // Fallback: Construct JWK Set URI from issuer URI
+                String fallbackJwkSetUri = issuerUri.replace("/oauth2/token", "/oauth2/jwks");
+                return NimbusJwtDecoder.withJwkSetUri(fallbackJwkSetUri)
+                        .build();
+            } catch (Exception ex) {
+                throw new RuntimeException("Failed to configure JWT decoder. Please check your Asgardeo configuration.", ex);
+            }
         }
     }
 

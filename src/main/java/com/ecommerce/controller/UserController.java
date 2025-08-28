@@ -2,6 +2,7 @@ package com.ecommerce.controller;
 
 import com.ecommerce.dto.UserDTO;
 import com.ecommerce.service.UserService;
+import com.ecommerce.util.JwtUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -36,13 +37,31 @@ public class UserController {
     @Operation(summary = "Get user profile", description = "Returns authenticated user's profile information from JWT token")
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<UserProfileResponse> getUserProfile(@AuthenticationPrincipal Jwt jwt) {
-        // Extract user information from JWT token (as required by assessment)
         UserProfileResponse profile = UserProfileResponse.builder()
-                .username(extractUsername(jwt))
-                .name(jwt.getClaimAsString("name"))
-                .email(jwt.getClaimAsString("email"))
-                .contactNumber(jwt.getClaimAsString("phone_number"))
-                .country(jwt.getClaimAsString("locale"))
+                .username(JwtUtil.extractUsername(jwt))
+                .name(JwtUtil.extractFullName(jwt))
+                .email(JwtUtil.extractEmail(jwt))
+                .contactNumber(JwtUtil.extractPhoneNumber(jwt))
+                .country(JwtUtil.extractLocale(jwt))
+                .roles(JwtUtil.extractRoles(jwt))
+                .emailVerified(JwtUtil.isEmailVerified(jwt))
+                .isAdmin(JwtUtil.isAdmin(jwt))
+                .tokenExpiresAt(jwt.getExpiresAt())
+                .timeToExpiry(JwtUtil.getTimeToExpiry(jwt))
+                .build();
+
+        return ResponseEntity.ok(profile);
+    }
+
+    @GetMapping("/profile/minimal")
+    @Operation(summary = "Get minimal user profile", description = "Returns basic user information from JWT token")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<MinimalProfileResponse> getMinimalProfile(@AuthenticationPrincipal Jwt jwt) {
+        MinimalProfileResponse profile = MinimalProfileResponse.builder()
+                .username(JwtUtil.extractUsername(jwt))
+                .name(JwtUtil.extractFullName(jwt))
+                .email(JwtUtil.extractEmail(jwt))
+                .isAdmin(JwtUtil.isAdmin(jwt))
                 .build();
 
         return ResponseEntity.ok(profile);
@@ -64,15 +83,18 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
-    private String extractUsername(Jwt jwt) {
-        String username = jwt.getClaimAsString("preferred_username");
-        if (username == null) {
-            username = jwt.getClaimAsString("username");
-        }
-        if (username == null) {
-            username = jwt.getSubject();
-        }
-        return username;
+    @GetMapping("/validate-token")
+    @Operation(summary = "Validate current token", description = "Validates the current JWT token and returns basic info")
+    @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
+    public ResponseEntity<TokenValidationResponse> validateToken(@AuthenticationPrincipal Jwt jwt) {
+        TokenValidationResponse response = TokenValidationResponse.builder()
+                .valid(!JwtUtil.isTokenExpired(jwt))
+                .username(JwtUtil.extractUsername(jwt))
+                .roles(JwtUtil.extractRoles(jwt))
+                .timeToExpiry(JwtUtil.getTimeToExpiry(jwt))
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 
     @Data
@@ -85,5 +107,32 @@ public class UserController {
         private String email;
         private String contactNumber;
         private String country;
+        private java.util.List<String> roles;
+        private Boolean emailVerified;
+        private Boolean isAdmin;
+        private java.time.Instant tokenExpiresAt;
+        private Long timeToExpiry;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MinimalProfileResponse {
+        private String username;
+        private String name;
+        private String email;
+        private Boolean isAdmin;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TokenValidationResponse {
+        private Boolean valid;
+        private String username;
+        private java.util.List<String> roles;
+        private Long timeToExpiry;
     }
 }

@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Component
 public class JwtAuthenticationConverterCustom implements Converter<Jwt, AbstractAuthenticationToken> {
@@ -24,39 +25,35 @@ public class JwtAuthenticationConverterCustom implements Converter<Jwt, Abstract
 
     private Collection<GrantedAuthority> extractAuthorities(Jwt jwt) {
         // Extract authorities from JWT claims
-        // This implementation handles common OIDC/OAuth2 patterns
-
-        // Try to get roles from different standard claims
         Collection<String> roles = extractRolesFromJwt(jwt);
+        Collection<String> scopes = extractScopesFromJwt(jwt);
 
-        return roles.stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                .collect(Collectors.toList());
+        // Combine roles and scopes
+        return Stream.concat(
+                roles.stream().map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase())),
+                scopes.stream().map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope.toUpperCase()))
+        ).collect(Collectors.toList());
     }
 
     @SuppressWarnings("unchecked")
     private Collection<String> extractRolesFromJwt(Jwt jwt) {
-        // Try multiple common claim names for roles
         Object roles = null;
 
-        // Check for 'roles' claim (common in Auth0, Asgardeo)
-        if (jwt.hasClaim("roles")) {
+        // Check for Asgardeo specific claims
+        if (jwt.hasClaim("groups")) {
+            roles = jwt.getClaim("groups");
+        }
+        // Check for standard 'roles' claim
+        else if (jwt.hasClaim("roles")) {
             roles = jwt.getClaim("roles");
         }
         // Check for 'authorities' claim
         else if (jwt.hasClaim("authorities")) {
             roles = jwt.getClaim("authorities");
         }
-        // Check for 'groups' claim (common in some IDPs)
-        else if (jwt.hasClaim("groups")) {
-            roles = jwt.getClaim("groups");
-        }
-        // Check for scope claim and convert to roles
-        else if (jwt.hasClaim("scope")) {
-            String scope = jwt.getClaimAsString("scope");
-            if (scope != null) {
-                return List.of(scope.split(" "));
-            }
+        // Check for custom application roles
+        else if (jwt.hasClaim("application_roles")) {
+            roles = jwt.getClaim("application_roles");
         }
 
         if (roles instanceof List<?>) {
@@ -64,11 +61,35 @@ public class JwtAuthenticationConverterCustom implements Converter<Jwt, Abstract
                     .map(Object::toString)
                     .collect(Collectors.toList());
         } else if (roles instanceof String) {
-            // Handle space or comma-separated roles
             return List.of(roles.toString().split("[\\s,]+"));
         }
 
-        // Default role if no roles found
+        // Default role based on token type or user existence
         return Collections.singletonList("USER");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Collection<String> extractScopesFromJwt(Jwt jwt) {
+        // Extract scopes from 'scope' claim
+        if (jwt.hasClaim("scope")) {
+            String scopeString = jwt.getClaimAsString("scope");
+            if (scopeString != null && !scopeString.trim().isEmpty()) {
+                return List.of(scopeString.split("\\s+"));
+            }
+        }
+
+        // Extract from 'scp' claim (some providers use this)
+        if (jwt.hasClaim("scp")) {
+            Object scp = jwt.getClaim("scp");
+            if (scp instanceof List<?>) {
+                return ((List<?>) scp).stream()
+                        .map(Object::toString)
+                        .collect(Collectors.toList());
+            } else if (scp instanceof String) {
+                return List.of(scp.toString().split("\\s+"));
+            }
+        }
+
+        return Collections.emptyList();
     }
 }
