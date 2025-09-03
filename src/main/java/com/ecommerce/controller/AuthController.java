@@ -1,7 +1,10 @@
 package com.ecommerce.controller;
 
+import com.ecommerce.dto.AuthenticationDTO;
+import com.ecommerce.service.AuthenticationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,15 +27,65 @@ import java.util.Map;
 @Tag(name = "Authentication", description = "JWT Authentication and token management")
 public class AuthController {
 
-    @Value("${spring.security.oauth2.client.registration.asgardeo.client-id}")
+    private final AuthenticationService authenticationService;
+
+    @Value("${spring.security.oauth2.client.registration.asgardeo.client-id:}")
     private String clientId;
 
-    @Value("${spring.security.oauth2.client.provider.asgardeo.authorization-uri}")
+    @Value("${spring.security.oauth2.client.provider.asgardeo.authorization-uri:}")
     private String authorizationUri;
+
+    // Local JWT Authentication endpoints
+
+    @PostMapping("/login")
+    @Operation(summary = "User Login", description = "Authenticates user with username/email and password, returns JWT token")
+    public ResponseEntity<AuthenticationDTO.LoginResponse> login(@Valid @RequestBody AuthenticationDTO.LoginRequest loginRequest) {
+        AuthenticationDTO.LoginResponse response = authenticationService.login(loginRequest);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    @Operation(summary = "User Logout", description = "Invalidates the JWT token")
+    public ResponseEntity<Map<String, String>> logout(@Valid @RequestBody AuthenticationDTO.LogoutRequest logoutRequest) {
+        authenticationService.logout(logoutRequest.getToken());
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Successfully logged out");
+        response.put("status", "success");
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/validate-token")
+    @Operation(summary = "Validate JWT token", description = "Validates the provided JWT token and returns token info")
+    public ResponseEntity<AuthenticationDTO.TokenValidationResponse> validateToken(@Valid @RequestBody Map<String, String> request) {
+        String token = request.get("token");
+        if (token == null || token.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // Remove Bearer prefix if present
+        if (token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        AuthenticationDTO.TokenValidationResponse response = authenticationService.validateToken(token);
+        return ResponseEntity.ok(response);
+    }
+
+    // OAuth2/Asgardeo endpoints (existing functionality)
 
     @GetMapping("/login-url")
     @Operation(summary = "Get Asgardeo login URL", description = "Returns the URL for Asgardeo OAuth2 login")
     public ResponseEntity<LoginUrlResponse> getLoginUrl(@RequestParam(defaultValue = "http://localhost:3000/callback") String redirectUri) {
+        if (clientId == null || clientId.isEmpty() || authorizationUri == null || authorizationUri.isEmpty()) {
+            return ResponseEntity.ok(LoginUrlResponse.builder()
+                    .loginUrl("")
+                    .clientId("")
+                    .message("Asgardeo OAuth2 not configured. Use /api/auth/login for local authentication.")
+                    .build());
+        }
+
         String loginUrl = String.format(
                 "%s?client_id=%s&response_type=code&scope=openid%%20profile%%20email&redirect_uri=%s",
                 authorizationUri, clientId, redirectUri
@@ -45,7 +98,7 @@ public class AuthController {
     }
 
     @GetMapping("/profile")
-    @Operation(summary = "Get authenticated user profile", description = "Returns the profile information from JWT token")
+    @Operation(summary = "Get authenticated user profile", description = "Returns the profile information from JWT token (OAuth2 or local)")
     public ResponseEntity<UserProfile> getUserProfile(@AuthenticationPrincipal Jwt jwt) {
         UserProfile profile = UserProfile.builder()
                 .sub(jwt.getSubject())
@@ -67,8 +120,8 @@ public class AuthController {
     }
 
     @PostMapping("/validate")
-    @Operation(summary = "Validate JWT token", description = "Validates the provided JWT token and returns token info")
-    public ResponseEntity<TokenValidationResponse> validateToken(@AuthenticationPrincipal Jwt jwt) {
+    @Operation(summary = "Validate OAuth2 JWT token", description = "Validates OAuth2 JWT token and returns token info")
+    public ResponseEntity<TokenValidationResponse> validateOAuth2Token(@AuthenticationPrincipal Jwt jwt) {
         boolean isValid = jwt.getExpiresAt() != null && jwt.getExpiresAt().isAfter(Instant.now());
 
         TokenValidationResponse response = TokenValidationResponse.builder()
@@ -88,14 +141,16 @@ public class AuthController {
     @Operation(summary = "Get OAuth2 configuration", description = "Returns OAuth2 configuration for frontend")
     public ResponseEntity<Map<String, String>> getOAuth2Config() {
         Map<String, String> config = new HashMap<>();
-        config.put("clientId", clientId);
-        config.put("authorizationUri", authorizationUri);
+        config.put("clientId", clientId != null ? clientId : "");
+        config.put("authorizationUri", authorizationUri != null ? authorizationUri : "");
         config.put("scope", "openid profile email");
         config.put("responseType", "code");
+        config.put("hasOAuth2", String.valueOf(clientId != null && !clientId.isEmpty()));
 
         return ResponseEntity.ok(config);
     }
 
+    // Helper methods
     private String extractUsername(Jwt jwt) {
         String username = jwt.getClaimAsString("preferred_username");
         if (username == null) {
@@ -112,10 +167,15 @@ public class AuthController {
 
     @SuppressWarnings("unchecked")
     private List<String> extractRoles(Jwt jwt) {
-        Object roles = jwt.getClaim("groups");
-        if (roles == null) {
+        Object roles = null;
+
+        // Check for various role claims
+        if (jwt.hasClaim("groups")) {
+            roles = jwt.getClaim("groups");
+        } else if (jwt.hasClaim("roles")) {
             roles = jwt.getClaim("roles");
         }
+
         if (roles instanceof List<?>) {
             return ((List<?>) roles).stream()
                     .map(Object::toString)
@@ -133,6 +193,7 @@ public class AuthController {
         return List.of();
     }
 
+    // Response DTOs
     @Data
     @Builder
     @NoArgsConstructor
@@ -140,6 +201,7 @@ public class AuthController {
     public static class LoginUrlResponse {
         private String loginUrl;
         private String clientId;
+        private String message;
     }
 
     @Data
