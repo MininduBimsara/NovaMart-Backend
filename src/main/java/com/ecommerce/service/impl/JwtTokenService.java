@@ -6,10 +6,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
-import java.util.Date;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class JwtTokenService {
@@ -59,10 +58,12 @@ public class JwtTokenService {
     public Set<String> extractRoles(String token) {
         return extractClaim(token, claims -> {
             Object roles = claims.get("roles");
-            if (roles instanceof Set<?>) {
-                return (Set<String>) roles;
+            if (roles instanceof List<?>) {
+                return new HashSet<>(((List<?>) roles).stream()
+                        .map(Object::toString)
+                        .collect(Collectors.toList()));
             }
-            return Set.of();
+            return Set.of("USER"); // Default fallback
         });
     }
 

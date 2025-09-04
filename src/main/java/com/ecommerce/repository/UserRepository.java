@@ -24,7 +24,7 @@ public interface UserRepository extends MongoRepository<User, String> {
     /**
      * Find user by username or email (case insensitive)
      */
-    @Query("{ $or: [ {'username': ?0}, {'email': {$regex: ?0, $options: 'i'}} ] }")
+    @Query("{ $or: [ {'username': ?0}, {'email': ?0} ] }")
     Optional<User> findByUsernameOrEmailIgnoreCase(String usernameOrEmail);
 
     /**

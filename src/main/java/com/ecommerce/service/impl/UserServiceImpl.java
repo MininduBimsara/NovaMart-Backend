@@ -98,22 +98,27 @@ public class UserServiceImpl implements UserService {
      * This method should be called during application startup
      */
     public void createDefaultAdminIfNotExists() {
-        // Check if any admin user exists
-        boolean adminExists = userRepository.findAll().stream()
-                .anyMatch(user -> user.getRoles().contains("ADMIN"));
+        // Check if the specific admin user exists
+        if (!userRepository.existsByUsername("admin")) {
+            // Also check by email to be safe
+            if (!userRepository.existsByEmailIgnoreCase("admin@ecommerce.com")) {
+                User adminUser = User.builder()
+                        .username("admin")
+                        .email("admin@ecommerce.com")
+                        .password(passwordEncoder.encode("admin123"))
+                        .name("System Administrator")
+                        .roles(Set.of("ADMIN", "USER"))
+                        .country("Sri Lanka")
+                        .build();
 
-        if (!adminExists) {
-            User adminUser = User.builder()
-                    .username("admin")
-                    .email("admin@ecommerce.com")
-                    .password(passwordEncoder.encode("admin123"))
-                    .name("System Administrator")
-                    .roles(Set.of("ADMIN", "USER"))
-                    .country("Sri Lanka")
-                    .build();
-
-            userRepository.save(adminUser);
-            System.out.println("Default admin user created: username=admin, password=admin123");
+                try {
+                    userRepository.save(adminUser);
+                    System.out.println("Default admin user created: username=admin, password=admin123");
+                } catch (Exception e) {
+                    // Handle duplicate key errors gracefully
+                    System.out.println("Admin user already exists or creation failed: " + e.getMessage());
+                }
+            }
         }
     }
 }

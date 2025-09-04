@@ -51,19 +51,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 // Validate the token
                 if (jwtTokenService.validateToken(jwt, username)) {
-                    // Extract roles from JWT
+                    // Extract roles from JWT - THIS IS THE KEY FIX
                     Set<String> roles = jwtTokenService.extractRoles(jwt);
 
-                    // Convert roles to authorities
+                    // Debug logging - remove after fixing
+                    System.out.println("Extracted roles for user " + username + ": " + roles);
+
+                    // Convert roles to authorities with ROLE_ prefix
                     var authorities = roles.stream()
-                            .map(role -> {
-                                // Add ROLE_ prefix if not present
-                                if (!role.startsWith("ROLE_")) {
-                                    return new SimpleGrantedAuthority("ROLE_" + role.toUpperCase());
-                                }
-                                return new SimpleGrantedAuthority(role.toUpperCase());
-                            })
+                            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
                             .collect(Collectors.toList());
+
+                    // Debug logging - remove after fixing
+                    System.out.println("Authorities: " + authorities);
 
                     // Create authentication token
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
