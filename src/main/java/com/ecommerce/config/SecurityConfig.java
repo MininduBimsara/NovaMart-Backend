@@ -149,7 +149,7 @@ public class SecurityConfig {
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", source);
+        source.registerCorsConfiguration("/**", configuration);
         return source;
     }
 

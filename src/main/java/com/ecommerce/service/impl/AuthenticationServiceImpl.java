@@ -5,7 +5,7 @@ import com.ecommerce.dto.AuthenticationDTO;
 import com.ecommerce.exception.CustomBusinessException;
 import com.ecommerce.repository.UserRepository;
 import com.ecommerce.service.AuthenticationService;
-import com.ecommerce.service.JwtTokenService;
+import com.ecommerce.service.impl.JwtTokenService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;

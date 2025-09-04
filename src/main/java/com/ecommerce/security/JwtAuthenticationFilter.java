@@ -1,6 +1,6 @@
 package com.ecommerce.security;
 
-import com.ecommerce.service.JwtTokenService;
+import com.ecommerce.service.impl.JwtTokenService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
