@@ -8,8 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -23,8 +22,8 @@ public class CartController {
     @GetMapping
     @Operation(summary = "Get user cart", description = "Returns the current user's shopping cart")
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
-    public ResponseEntity<CartDTO> getCart(@AuthenticationPrincipal Jwt jwt) {
-        String username = extractUsername(jwt);
+    public ResponseEntity<CartDTO> getCart(Authentication authentication) {
+        String username = authentication.getName();
         CartDTO cart = cartService.getCartByUserId(username);
         return ResponseEntity.ok(cart);
     }
@@ -33,8 +32,8 @@ public class CartController {
     @Operation(summary = "Add item to cart", description = "Adds a product item to the user's cart")
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<CartDTO> addItemToCart(@Valid @RequestBody CartDTO.CartItemDTO item,
-                                                 @AuthenticationPrincipal Jwt jwt) {
-        String username = extractUsername(jwt);
+                                                 Authentication authentication) {
+        String username = authentication.getName();
         CartDTO updatedCart = cartService.addItemToCart(username, item);
         return ResponseEntity.ok(updatedCart);
     }
@@ -43,8 +42,8 @@ public class CartController {
     @Operation(summary = "Remove item from cart", description = "Removes a specific item from the cart")
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<CartDTO> removeItemFromCart(@PathVariable String productId,
-                                                      @AuthenticationPrincipal Jwt jwt) {
-        String username = extractUsername(jwt);
+                                                      Authentication authentication) {
+        String username = authentication.getName();
         CartDTO updatedCart = cartService.removeItemFromCart(username, productId);
         return ResponseEntity.ok(updatedCart);
     }
@@ -52,20 +51,9 @@ public class CartController {
     @DeleteMapping("/clear")
     @Operation(summary = "Clear cart", description = "Removes all items from the user's cart")
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
-    public ResponseEntity<Void> clearCart(@AuthenticationPrincipal Jwt jwt) {
-        String username = extractUsername(jwt);
+    public ResponseEntity<Void> clearCart(Authentication authentication) {
+        String username = authentication.getName();
         cartService.clearCart(username);
         return ResponseEntity.noContent().build();
-    }
-
-    private String extractUsername(Jwt jwt) {
-        String username = jwt.getClaimAsString("preferred_username");
-        if (username == null) {
-            username = jwt.getClaimAsString("username");
-        }
-        if (username == null) {
-            username = jwt.getSubject();
-        }
-        return username;
     }
 }

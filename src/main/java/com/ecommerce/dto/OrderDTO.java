@@ -16,7 +16,7 @@ public class OrderDTO {
 
     private String id;
 
-    @NotBlank(message = "User ID is mandatory")
+
     private String userId;
 
     @Valid
