@@ -1,3 +1,4 @@
+// src/main/java/com/ecommerce/service/impl/JwtTokenService.java - FIXED VERSION
 package com.ecommerce.service.impl;
 
 import io.jsonwebtoken.*;
@@ -24,11 +25,19 @@ public class JwtTokenService {
     }
 
     public String generateToken(String username, String email, Set<String> roles) {
-        Map<String, Object> claims = Map.of(
-                "email", email != null ? email : "",
-                "roles", roles,
-                "type", "LOCAL_JWT"
-        );
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("email", email != null ? email : "");
+        claims.put("username", username);
+        claims.put("preferred_username", username);
+
+        // FIX: Add roles in multiple formats for compatibility
+        claims.put("roles", roles);
+        claims.put("groups", roles); // For Asgardeo compatibility
+        claims.put("authorities", roles.stream()
+                .map(role -> "ROLE_" + role.toUpperCase())
+                .collect(Collectors.toList()));
+
+        claims.put("type", "LOCAL_JWT");
 
         return createToken(claims, username);
     }
@@ -51,19 +60,64 @@ public class JwtTokenService {
     }
 
     public String extractEmail(String token) {
-        return extractClaim(token, claims -> claims.get("email", String.class));
+        return extractClaim(token, claims -> {
+            String email = claims.get("email", String.class);
+            if (email == null || email.isEmpty()) {
+                // Fallback to username if email not present
+                return claims.getSubject();
+            }
+            return email;
+        });
     }
 
     @SuppressWarnings("unchecked")
     public Set<String> extractRoles(String token) {
         return extractClaim(token, claims -> {
-            Object roles = claims.get("roles");
-            if (roles instanceof List<?>) {
-                return new HashSet<>(((List<?>) roles).stream()
-                        .map(Object::toString)
-                        .collect(Collectors.toList()));
+            Set<String> roles = new HashSet<>();
+
+            // Try different role claim formats
+            Object rolesObj = claims.get("roles");
+            if (rolesObj instanceof List<?>) {
+                ((List<?>) rolesObj).forEach(role -> {
+                    String roleStr = role.toString();
+                    // Remove ROLE_ prefix if present
+                    if (roleStr.startsWith("ROLE_")) {
+                        roleStr = roleStr.substring(5);
+                    }
+                    roles.add(roleStr.toUpperCase());
+                });
             }
-            return Set.of("USER"); // Default fallback
+
+            // Try 'groups' claim (Asgardeo format)
+            Object groupsObj = claims.get("groups");
+            if (groupsObj instanceof List<?>) {
+                ((List<?>) groupsObj).forEach(group -> {
+                    String groupStr = group.toString();
+                    if (groupStr.startsWith("ROLE_")) {
+                        groupStr = groupStr.substring(5);
+                    }
+                    roles.add(groupStr.toUpperCase());
+                });
+            }
+
+            // Try 'authorities' claim
+            Object authoritiesObj = claims.get("authorities");
+            if (authoritiesObj instanceof List<?>) {
+                ((List<?>) authoritiesObj).forEach(authority -> {
+                    String authStr = authority.toString();
+                    if (authStr.startsWith("ROLE_")) {
+                        authStr = authStr.substring(5);
+                    }
+                    roles.add(authStr.toUpperCase());
+                });
+            }
+
+            // Default fallback
+            if (roles.isEmpty()) {
+                roles.add("USER");
+            }
+
+            return roles;
         });
     }
 
@@ -97,12 +151,20 @@ public class JwtTokenService {
     }
 
     public Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
+        try {
+            return extractExpiration(token).before(new Date());
+        } catch (Exception e) {
+            return true; // Consider expired if we can't parse
+        }
     }
 
     public Boolean validateToken(String token, String username) {
-        final String extractedUsername = extractUsername(token);
-        return (extractedUsername.equals(username) && !isTokenExpired(token));
+        try {
+            final String extractedUsername = extractUsername(token);
+            return (extractedUsername.equals(username) && !isTokenExpired(token));
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public Boolean validateToken(String token) {
