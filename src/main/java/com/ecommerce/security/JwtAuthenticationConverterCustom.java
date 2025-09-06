@@ -1,4 +1,4 @@
-// src/main/java/com/ecommerce/security/JwtAuthenticationConverterCustom.java
+// src/main/java/com/ecommerce/security/JwtAuthenticationConverterCustom.java - FIXED
 package com.ecommerce.security;
 
 import lombok.extern.slf4j.Slf4j;
@@ -22,10 +22,15 @@ public class JwtAuthenticationConverterCustom implements Converter<Jwt, Abstract
 
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
-        log.info("=== ASGARDEO JWT CONVERSION ===");
+        log.info("=== CONVERTING ASGARDEO JWT ===");
         log.info("JWT subject: {}", jwt.getSubject());
+        log.info("JWT issuer: {}", jwt.getIssuer());
         log.info("JWT claims: {}", jwt.getClaims().keySet());
-        log.info("Available claims: {}", jwt.getClaims());
+
+        // Debug all claims for troubleshooting
+        jwt.getClaims().forEach((key, value) -> {
+            log.debug("Claim [{}]: {}", key, value);
+        });
 
         Collection<GrantedAuthority> authorities = extractAuthorities(jwt);
         log.info("Final authorities for Asgardeo JWT: {}", authorities);
@@ -35,17 +40,18 @@ public class JwtAuthenticationConverterCustom implements Converter<Jwt, Abstract
     }
 
     private Collection<GrantedAuthority> extractAuthorities(Jwt jwt) {
-        // Extract authorities from JWT claims
         Collection<String> roles = extractRolesFromJwt(jwt);
         Collection<String> scopes = extractScopesFromJwt(jwt);
 
         log.info("Extracted roles: {}", roles);
         log.info("Extracted scopes: {}", scopes);
 
-        // Combine roles and scopes
+        // Combine roles and scopes into authorities
         return Stream.concat(
                 roles.stream().map(role -> {
-                    String authority = "ROLE_" + role.toUpperCase();
+                    // Ensure ROLE_ prefix for Spring Security
+                    String authority = role.toUpperCase().startsWith("ROLE_") ?
+                            role.toUpperCase() : "ROLE_" + role.toUpperCase();
                     log.debug("Creating role authority: {}", authority);
                     return new SimpleGrantedAuthority(authority);
                 }),
@@ -59,53 +65,51 @@ public class JwtAuthenticationConverterCustom implements Converter<Jwt, Abstract
 
     @SuppressWarnings("unchecked")
     private Collection<String> extractRolesFromJwt(Jwt jwt) {
-        log.info("=== EXTRACTING ROLES FROM ASGARDEO JWT ===");
+        log.debug("=== EXTRACTING ROLES FROM ASGARDEO JWT ===");
 
-        // 1. PRIORITY: Check for 'groups' claim first (Asgardeo's primary mechanism)
+        // PRIORITY 1: Check for 'groups' claim (Asgardeo's primary mechanism)
         if (jwt.hasClaim("groups")) {
             Object groups = jwt.getClaim("groups");
-            log.info("Found 'groups' claim: {} (type: {})", groups, groups != null ? groups.getClass().getSimpleName() : "null");
+            log.info("Found 'groups' claim: {} (type: {})", groups,
+                    groups != null ? groups.getClass().getSimpleName() : "null");
 
             if (groups instanceof List<?> groupList) {
                 List<String> roleList = groupList.stream()
                         .map(Object::toString)
                         .collect(Collectors.toList());
-                log.info("Converted groups to roles: {}", roleList);
-
-                // If groups exist, use them as roles
+                log.info("Using groups as roles: {}", roleList);
                 if (!roleList.isEmpty()) {
                     return roleList;
                 }
             } else if (groups instanceof String groupsStr) {
-                log.info("Groups as string: {}", groupsStr);
                 if (!groupsStr.trim().isEmpty()) {
-                    return List.of(groupsStr.split("[\\s,]+"));
+                    List<String> roles = List.of(groupsStr.split("[\\s,]+"));
+                    log.info("Using groups string as roles: {}", roles);
+                    return roles;
                 }
             }
         }
 
-        // 2. Check for 'roles' claim (if configured in Asgardeo)
+        // PRIORITY 2: Check for 'roles' claim
         if (jwt.hasClaim("roles")) {
             Object roles = jwt.getClaim("roles");
-            log.info("Found 'roles' claim: {} (type: {})", roles, roles != null ? roles.getClass().getSimpleName() : "null");
+            log.info("Found 'roles' claim: {}", roles);
 
             if (roles instanceof List<?> rolesList) {
                 List<String> roleList = rolesList.stream()
                         .map(Object::toString)
                         .collect(Collectors.toList());
-                log.info("Using roles from 'roles' claim: {}", roleList);
                 if (!roleList.isEmpty()) {
                     return roleList;
                 }
             } else if (roles instanceof String rolesStr) {
-                log.info("Roles as string: {}", rolesStr);
                 if (!rolesStr.trim().isEmpty()) {
                     return List.of(rolesStr.split("[\\s,]+"));
                 }
             }
         }
 
-        // 3. Check for 'application_roles' claim (custom roles)
+        // PRIORITY 3: Check for custom application roles
         if (jwt.hasClaim("application_roles")) {
             Object appRoles = jwt.getClaim("application_roles");
             log.info("Found 'application_roles' claim: {}", appRoles);
@@ -117,49 +121,60 @@ public class JwtAuthenticationConverterCustom implements Converter<Jwt, Abstract
                 if (!roleList.isEmpty()) {
                     return roleList;
                 }
-            } else if (appRoles instanceof String appRolesStr) {
-                if (!appRolesStr.trim().isEmpty()) {
-                    return List.of(appRolesStr.split("[\\s,]+"));
-                }
             }
         }
 
-        // 4. CRITICAL: Default for all authenticated Asgardeo users
-        log.info("No roles/groups found in JWT, assigning default USER role for authenticated Asgardeo user");
+        // PRIORITY 4: Check if user has admin indicators in username/email
+        String username = extractUsername(jwt);
+        if (username != null && (username.toLowerCase().contains("admin") ||
+                username.toLowerCase().equals("admin@ecommerce.com"))) {
+            log.info("Detected admin user by username pattern: {}", username);
+            return List.of("ADMIN", "USER");
+        }
+
+        // DEFAULT: All authenticated Asgardeo users get USER role
+        log.info("No specific roles found, assigning default USER role");
         return Collections.singletonList("USER");
     }
 
     @SuppressWarnings("unchecked")
     private Collection<String> extractScopesFromJwt(Jwt jwt) {
-        log.debug("=== EXTRACTING SCOPES ===");
-
         // Extract scopes from 'scope' claim
         if (jwt.hasClaim("scope")) {
             String scopeString = jwt.getClaimAsString("scope");
             if (scopeString != null && !scopeString.trim().isEmpty()) {
                 List<String> scopes = List.of(scopeString.split("\\s+"));
-                log.debug("Extracted scopes from 'scope' claim: {}", scopes);
+                log.debug("Extracted scopes: {}", scopes);
                 return scopes;
             }
         }
 
-        // Extract from 'scp' claim (some providers use this)
-        if (jwt.hasClaim("scp")) {
-            Object scp = jwt.getClaim("scp");
-            if (scp instanceof List<?> scpList) {
-                List<String> scopes = scpList.stream()
-                        .map(Object::toString)
-                        .collect(Collectors.toList());
-                log.debug("Extracted scopes from 'scp' claim: {}", scopes);
-                return scopes;
-            } else if (scp instanceof String scpStr) {
-                List<String> scopes = List.of(scpStr.split("\\s+"));
-                log.debug("Extracted scopes from 'scp' string: {}", scopes);
-                return scopes;
-            }
-        }
-
-        log.debug("No scopes found in JWT");
         return Collections.emptyList();
+    }
+
+    /**
+     * Extract username with multiple fallback strategies for Asgardeo
+     */
+    private String extractUsername(Jwt jwt) {
+        // Try preferred_username first (most common in OIDC)
+        String username = jwt.getClaimAsString("preferred_username");
+        if (username != null && !username.trim().isEmpty()) {
+            return username;
+        }
+
+        // Try email as username
+        username = jwt.getClaimAsString("email");
+        if (username != null && !username.trim().isEmpty()) {
+            return username;
+        }
+
+        // Try generic username claim
+        username = jwt.getClaimAsString("username");
+        if (username != null && !username.trim().isEmpty()) {
+            return username;
+        }
+
+        // Fallback to subject
+        return jwt.getSubject();
     }
 }

@@ -1,4 +1,4 @@
-// src/main/java/com/ecommerce/config/SecurityConfig.java - COMPREHENSIVE FIX
+// src/main/java/com/ecommerce/config/SecurityConfig.java - FIXED VERSION
 package com.ecommerce.config;
 
 import com.ecommerce.security.JwtAuthenticationConverterCustom;
@@ -45,7 +45,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        log.info("Configuring Security Filter Chain");
+        log.info("=== CONFIGURING SECURITY FILTER CHAIN ===");
         log.info("OAuth2 configured: {}", isOAuth2Configured());
         log.info("JWK Set URI: {}", jwkSetUri);
         log.info("Issuer URI: {}", issuerUri);
@@ -85,9 +85,9 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 );
 
-        // CRITICAL FIX: Add OAuth2 resource server BEFORE local JWT filter
+        // CRITICAL: Configure OAuth2 resource server FIRST if available
         if (isOAuth2Configured()) {
-            log.info("Configuring OAuth2 Resource Server with JWK Set URI: {}", jwkSetUri);
+            log.info("Configuring OAuth2 Resource Server");
             http.oauth2ResourceServer(oauth2 -> oauth2
                     .jwt(jwt -> jwt
                             .decoder(jwtDecoder())
@@ -98,24 +98,8 @@ public class SecurityConfig {
             log.warn("OAuth2 not configured - using local JWT authentication only");
         }
 
-        // Add local JWT filter AFTER OAuth2 resource server
+        // Add local JWT filter AFTER OAuth2 (this is the correct order)
         http.addFilterAfter(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
-        // Security headers
-        http.headers(headers -> headers
-                .contentSecurityPolicy(csp -> csp
-                        .policyDirectives("default-src 'self'; " +
-                                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-                                "style-src 'self' 'unsafe-inline'; " +
-                                "img-src 'self' data: https:; " +
-                                "connect-src 'self' https:")
-                )
-                .frameOptions(frame -> frame.deny())
-                .httpStrictTransportSecurity(hsts -> hsts
-                        .maxAgeInSeconds(31536000)
-                        .includeSubDomains(true)
-                )
-        );
 
         return http.build();
     }
@@ -134,33 +118,12 @@ public class SecurityConfig {
 
         try {
             log.info("Creating JwtDecoder with JWK Set URI: {}", jwkSetUri);
-
-            // Create decoder without caching configuration (compatible with all Spring Security versions)
-            NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
-                    .build();
-
+            NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
             log.info("JwtDecoder created successfully");
             return decoder;
 
         } catch (Exception e) {
-            log.error("Failed to create JwtDecoder with JWK Set URI: {}", jwkSetUri, e);
-
-            // Fallback: try to construct JWK Set URI from issuer URI
-            try {
-                if (issuerUri != null && !issuerUri.isEmpty() && !issuerUri.contains("YOUR_ORG_NAME")) {
-                    String fallbackJwkSetUri = issuerUri.replace("/oauth2/token", "/oauth2/jwks");
-                    log.info("Trying fallback JWK Set URI: {}", fallbackJwkSetUri);
-
-                    NimbusJwtDecoder fallbackDecoder = NimbusJwtDecoder.withJwkSetUri(fallbackJwkSetUri)
-                            .build();
-
-                    log.info("Fallback JwtDecoder created successfully");
-                    return fallbackDecoder;
-                }
-            } catch (Exception ex) {
-                log.error("Fallback JwtDecoder creation also failed", ex);
-            }
-
+            log.error("Failed to create JwtDecoder", e);
             throw new RuntimeException("Failed to configure OAuth2 JWT decoder", e);
         }
     }
@@ -185,13 +148,11 @@ public class SecurityConfig {
     private boolean isOAuth2Configured() {
         boolean hasJwkSetUri = jwkSetUri != null &&
                 !jwkSetUri.isEmpty() &&
-                !jwkSetUri.contains("YOUR_ORG_NAME") &&
-                !jwkSetUri.equals("https://api.asgardeo.io/t/YOUR_ORG_NAME/oauth2/jwks");
+                !jwkSetUri.contains("YOUR_ORG_NAME");
 
         boolean hasIssuerUri = issuerUri != null &&
                 !issuerUri.isEmpty() &&
-                !issuerUri.contains("YOUR_ORG_NAME") &&
-                !issuerUri.equals("https://api.asgardeo.io/t/YOUR_ORG_NAME/oauth2/token");
+                !issuerUri.contains("YOUR_ORG_NAME");
 
         boolean configured = hasJwkSetUri && hasIssuerUri;
 

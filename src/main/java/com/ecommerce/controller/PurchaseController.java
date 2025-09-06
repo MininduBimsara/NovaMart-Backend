@@ -1,7 +1,9 @@
+// src/main/java/com/ecommerce/controller/PurchaseController.java - FIXED VERSION
 package com.ecommerce.controller;
 
 import com.ecommerce.dto.PurchaseDTO;
 import com.ecommerce.service.PurchaseService;
+import com.ecommerce.util.AuthenticationUtil;
 import com.ecommerce.validation.DeliveryLocation;
 import com.ecommerce.validation.DeliveryTime;
 import com.ecommerce.validation.ProductName;
@@ -14,8 +16,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -41,7 +41,8 @@ public class PurchaseController {
             log.info("Authentication: {}", authentication);
             log.info("PurchaseDTO received: {}", purchaseDTO);
 
-            String username = extractUsernameFromAuth(authentication);
+            // Extract username using the unified utility
+            String username = AuthenticationUtil.extractUsernameFromAuth(authentication);
             log.info("Extracted username: {}", username);
 
             if (username == null || username.trim().isEmpty()) {
@@ -49,7 +50,38 @@ public class PurchaseController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
 
+            // CRITICAL FIX: Always override the username from the JWT token
+            // Don't rely on frontend to send the correct username
             purchaseDTO.setUsername(username);
+            log.info("Set username in purchaseDTO: {}", purchaseDTO.getUsername());
+
+            // Validate that all required fields are present
+            if (purchaseDTO.getPurchaseDate() == null) {
+                log.error("Purchase date is null");
+                return ResponseEntity.badRequest().build();
+            }
+
+            if (purchaseDTO.getDeliveryTime() == null || purchaseDTO.getDeliveryTime().trim().isEmpty()) {
+                log.error("Delivery time is null or empty");
+                return ResponseEntity.badRequest().build();
+            }
+
+            if (purchaseDTO.getDeliveryLocation() == null || purchaseDTO.getDeliveryLocation().trim().isEmpty()) {
+                log.error("Delivery location is null or empty");
+                return ResponseEntity.badRequest().build();
+            }
+
+            if (purchaseDTO.getProductName() == null || purchaseDTO.getProductName().trim().isEmpty()) {
+                log.error("Product name is null or empty");
+                return ResponseEntity.badRequest().build();
+            }
+
+            if (purchaseDTO.getQuantity() == null || purchaseDTO.getQuantity() < 1) {
+                log.error("Quantity is invalid: {}", purchaseDTO.getQuantity());
+                return ResponseEntity.badRequest().build();
+            }
+
+            log.info("All validation checks passed, creating purchase...");
 
             PurchaseDTO createdPurchase = purchaseService.createPurchase(purchaseDTO);
             log.info("Purchase created successfully: {}", createdPurchase.getId());
@@ -66,12 +98,13 @@ public class PurchaseController {
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<List<PurchaseDTO>> getUserPurchases(Authentication authentication) {
         try {
-            String username = extractUsernameFromAuth(authentication);
+            String username = AuthenticationUtil.extractUsernameFromAuth(authentication);
             if (username == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
 
             List<PurchaseDTO> purchases = purchaseService.getPurchasesByUsername(username);
+            log.info("Retrieved {} purchases for user: {}", purchases.size(), username);
             return ResponseEntity.ok(purchases);
         } catch (Exception e) {
             log.error("Error fetching user purchases: {}", e.getMessage(), e);
@@ -84,7 +117,7 @@ public class PurchaseController {
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<PurchaseDTO> getPurchaseById(@PathVariable String id, Authentication authentication) {
         try {
-            String username = extractUsernameFromAuth(authentication);
+            String username = AuthenticationUtil.extractUsernameFromAuth(authentication);
             if (username == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
@@ -92,7 +125,9 @@ public class PurchaseController {
             PurchaseDTO purchase = purchaseService.getPurchaseById(id);
 
             // Ensure user can only access their own purchases (unless admin)
-            if (!purchase.getUsername().equals(username) && !isAdmin(authentication)) {
+            if (!purchase.getUsername().equals(username) && !AuthenticationUtil.isAdmin(authentication)) {
+                log.warn("User {} attempted to access purchase {} belonging to {}",
+                        username, id, purchase.getUsername());
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
@@ -142,122 +177,6 @@ public class PurchaseController {
                 .map(product -> new ProductOption(product.name(), product.getDisplayName()))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(products);
-    }
-
-    /**
-     * ASGARDEO-OPTIMIZED username extraction
-     * Works with your current Asgardeo token configuration
-     */
-    private String extractUsernameFromAuth(Authentication authentication) {
-        if (authentication == null) {
-            log.error("Authentication is null");
-            return null;
-        }
-
-        log.info("=== EXTRACTING USERNAME ===");
-        log.info("Authentication type: {}", authentication.getClass().getSimpleName());
-        log.info("Principal type: {}", authentication.getPrincipal().getClass().getSimpleName());
-
-        // For Asgardeo JWT tokens
-        if (authentication.getPrincipal() instanceof Jwt jwt) {
-
-            log.info("Available JWT claims: {}", jwt.getClaims().keySet());
-            log.debug("All JWT claims: {}", jwt.getClaims());
-
-            // PRIORITY ORDER for your Asgardeo configuration:
-
-            // 1. preferred_username (most reliable for Asgardeo)
-            String username = jwt.getClaimAsString("preferred_username");
-            if (username != null && !username.trim().isEmpty()) {
-                log.info("Using preferred_username: {}", username);
-                return username;
-            }
-
-            // 2. email (good backup for Asgardeo)
-            username = jwt.getClaimAsString("email");
-            if (username != null && !username.trim().isEmpty()) {
-                log.info("Using email as username: {}", username);
-                return username;
-            }
-
-            // 3. userid (Asgardeo specific user ID)
-            username = jwt.getClaimAsString("userid");
-            if (username != null && !username.trim().isEmpty()) {
-                log.info("Using userid: {}", username);
-                return username;
-            }
-
-            // 4. name (user's display name)
-            username = jwt.getClaimAsString("name");
-            if (username != null && !username.trim().isEmpty()) {
-                log.info("Using name: {}", username);
-                return username;
-            }
-
-            // 5. given_name (first name as fallback)
-            username = jwt.getClaimAsString("given_name");
-            if (username != null && !username.trim().isEmpty()) {
-                log.info("Using given_name: {}", username);
-                return username;
-            }
-
-            // 6. username claim (generic username)
-            username = jwt.getClaimAsString("username");
-            if (username != null && !username.trim().isEmpty()) {
-                log.info("Using username claim: {}", username);
-                return username;
-            }
-
-            // 7. Final fallback to subject
-            username = jwt.getSubject();
-            log.info("Using subject as final fallback: {}", username);
-            return username;
-        }
-
-        // For local JWT tokens (string principal)
-        String name = authentication.getName();
-        if (name != null && !name.trim().isEmpty() && !name.equals("anonymousUser")) {
-            log.info("Using authentication name (local JWT): {}", name);
-            return name;
-        }
-
-        // Try to get principal if it's a string
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof String stringPrincipal && !stringPrincipal.trim().isEmpty()) {
-            log.info("Using string principal: {}", stringPrincipal);
-            return stringPrincipal;
-        }
-
-        // If principal is UserDetails, extract username
-        if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
-            log.info("Using UserDetails username: {}", userDetails.getUsername());
-            return userDetails.getUsername();
-        }
-
-        log.error("Could not extract username from authentication: {}", authentication);
-        return null;
-    }
-
-    private boolean isAdmin(Authentication authentication) {
-        if (authentication == null) {
-            return false;
-        }
-
-        boolean hasAdminAuthority = authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(authority -> {
-                    String auth = authority.toUpperCase();
-                    return auth.equals("ROLE_ADMIN") ||
-                            auth.equals("ADMIN") ||
-                            auth.contains("ADMIN") ||
-                            auth.equals("ROLE_ADMINISTRATOR") ||
-                            auth.equals("ADMINISTRATOR");
-                });
-
-        log.info("Admin check for user - Has admin authority: {}", hasAdminAuthority);
-        log.debug("User authorities: {}", authentication.getAuthorities());
-
-        return hasAdminAuthority;
     }
 
     // Response DTOs for options endpoints
