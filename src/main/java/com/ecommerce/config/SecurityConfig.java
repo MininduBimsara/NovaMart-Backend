@@ -1,8 +1,10 @@
+// src/main/java/com/ecommerce/config/SecurityConfig.java - COMPREHENSIVE FIX
 package com.ecommerce.config;
 
 import com.ecommerce.security.JwtAuthenticationConverterCustom;
 import com.ecommerce.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +24,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
@@ -42,6 +45,11 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        log.info("Configuring Security Filter Chain");
+        log.info("OAuth2 configured: {}", isOAuth2Configured());
+        log.info("JWK Set URI: {}", jwkSetUri);
+        log.info("Issuer URI: {}", issuerUri);
+
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
@@ -73,21 +81,25 @@ public class SecurityConfig {
                         // All other requests need authentication
                         .anyRequest().authenticated()
                 )
-                // Add JWT filter before UsernamePasswordAuthenticationFilter for local JWT tokens
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 );
 
-        // Configure OAuth2 resource server only if Asgardeo is configured
+        // CRITICAL FIX: Add OAuth2 resource server BEFORE local JWT filter
         if (isOAuth2Configured()) {
+            log.info("Configuring OAuth2 Resource Server with JWK Set URI: {}", jwkSetUri);
             http.oauth2ResourceServer(oauth2 -> oauth2
                     .jwt(jwt -> jwt
                             .decoder(jwtDecoder())
                             .jwtAuthenticationConverter(jwtAuthenticationConverter)
                     )
             );
+        } else {
+            log.warn("OAuth2 not configured - using local JWT authentication only");
         }
+
+        // Add local JWT filter AFTER OAuth2 resource server
+        http.addFilterAfter(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         // Security headers
         http.headers(headers -> headers
@@ -115,27 +127,41 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        // Only create OAuth2 JWT decoder if properly configured
         if (!isOAuth2Configured()) {
+            log.warn("OAuth2 not configured - JwtDecoder will not be available");
             return null;
         }
 
         try {
-            // Primary: Use the configured JWK Set URI
-            return NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
+            log.info("Creating JwtDecoder with JWK Set URI: {}", jwkSetUri);
+
+            // Create decoder without caching configuration (compatible with all Spring Security versions)
+            NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
                     .build();
+
+            log.info("JwtDecoder created successfully");
+            return decoder;
+
         } catch (Exception e) {
+            log.error("Failed to create JwtDecoder with JWK Set URI: {}", jwkSetUri, e);
+
+            // Fallback: try to construct JWK Set URI from issuer URI
             try {
-                // Fallback: Construct JWK Set URI from issuer URI
                 if (issuerUri != null && !issuerUri.isEmpty() && !issuerUri.contains("YOUR_ORG_NAME")) {
                     String fallbackJwkSetUri = issuerUri.replace("/oauth2/token", "/oauth2/jwks");
-                    return NimbusJwtDecoder.withJwkSetUri(fallbackJwkSetUri)
+                    log.info("Trying fallback JWK Set URI: {}", fallbackJwkSetUri);
+
+                    NimbusJwtDecoder fallbackDecoder = NimbusJwtDecoder.withJwkSetUri(fallbackJwkSetUri)
                             .build();
+
+                    log.info("Fallback JwtDecoder created successfully");
+                    return fallbackDecoder;
                 }
-                throw new RuntimeException("OAuth2 JWT configuration incomplete", e);
             } catch (Exception ex) {
-                throw new RuntimeException("Failed to configure OAuth2 JWT decoder. Using local JWT authentication only.", ex);
+                log.error("Fallback JwtDecoder creation also failed", ex);
             }
+
+            throw new RuntimeException("Failed to configure OAuth2 JWT decoder", e);
         }
     }
 
@@ -154,14 +180,26 @@ public class SecurityConfig {
     }
 
     /**
-     * Check if OAuth2/Asgardeo is properly configured
+     * Enhanced OAuth2 configuration check
      */
     private boolean isOAuth2Configured() {
-        return jwkSetUri != null &&
+        boolean hasJwkSetUri = jwkSetUri != null &&
                 !jwkSetUri.isEmpty() &&
                 !jwkSetUri.contains("YOUR_ORG_NAME") &&
-                issuerUri != null &&
+                !jwkSetUri.equals("https://api.asgardeo.io/t/YOUR_ORG_NAME/oauth2/jwks");
+
+        boolean hasIssuerUri = issuerUri != null &&
                 !issuerUri.isEmpty() &&
-                !issuerUri.contains("YOUR_ORG_NAME");
+                !issuerUri.contains("YOUR_ORG_NAME") &&
+                !issuerUri.equals("https://api.asgardeo.io/t/YOUR_ORG_NAME/oauth2/token");
+
+        boolean configured = hasJwkSetUri && hasIssuerUri;
+
+        log.debug("OAuth2 Configuration Check:");
+        log.debug("- JWK Set URI valid: {} ({})", hasJwkSetUri, jwkSetUri);
+        log.debug("- Issuer URI valid: {} ({})", hasIssuerUri, issuerUri);
+        log.debug("- Overall configured: {}", configured);
+
+        return configured;
     }
 }

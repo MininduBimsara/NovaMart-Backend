@@ -1,4 +1,3 @@
-// src/main/java/com/ecommerce/controller/OrderController.java - FIXED VERSION
 package com.ecommerce.controller;
 
 import com.ecommerce.dto.OrderDTO;
@@ -7,16 +6,19 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
@@ -31,38 +33,37 @@ public class OrderController {
     public ResponseEntity<OrderDTO> createOrder(@Valid @RequestBody OrderDTO orderDTO,
                                                 Authentication authentication) {
         try {
-            System.out.println("=== ORDER CREATION DEBUG ===");
-            System.out.println("Authentication object: " + authentication);
-            System.out.println("Authentication name: " + (authentication != null ? authentication.getName() : "null"));
-            System.out.println("Authentication authorities: " + (authentication != null ? authentication.getAuthorities() : "null"));
-            System.out.println("Security context: " + SecurityContextHolder.getContext().getAuthentication());
-            System.out.println("OrderDTO received: " + orderDTO);
+            log.info("=== ORDER CREATION DEBUG ===");
+            log.info("Authentication object: {}", authentication);
+            log.info("Authentication name: {}", authentication != null ? authentication.getName() : "null");
+            log.info("Authentication authorities: {}", authentication != null ? authentication.getAuthorities() : "null");
+            log.info("Security context: {}", SecurityContextHolder.getContext().getAuthentication());
+            log.info("OrderDTO received: {}", orderDTO);
 
             if (authentication == null) {
-                System.out.println("Authentication is null!");
+                log.error("Authentication is null!");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
 
             // Extract username from authentication
             String username = extractUsernameFromAuth(authentication);
-            System.out.println("Extracted username: " + username);
+            log.info("Extracted username: {}", username);
 
             if (username == null || username.trim().isEmpty()) {
-                System.out.println("Username is null or empty!");
+                log.error("Username is null or empty!");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
 
             // Set the user ID for the order
             orderDTO.setUserId(username);
-            System.out.println("OrderDTO after setting userId: " + orderDTO.getUserId());
-            System.out.println("=== END DEBUG ===");
+            log.info("OrderDTO after setting userId: {}", orderDTO.getUserId());
+            log.info("=== END DEBUG ===");
 
             OrderDTO createdOrder = orderService.createOrder(orderDTO);
             return new ResponseEntity<>(createdOrder, HttpStatus.CREATED);
 
         } catch (Exception e) {
-            System.err.println("Error creating order: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error creating order: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -80,7 +81,7 @@ public class OrderController {
             List<OrderDTO> orders = orderService.getOrdersByUserId(username);
             return ResponseEntity.ok(orders);
         } catch (Exception e) {
-            System.err.println("Error fetching user orders: " + e.getMessage());
+            log.error("Error fetching user orders: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -104,7 +105,7 @@ public class OrderController {
 
             return ResponseEntity.ok(order);
         } catch (Exception e) {
-            System.err.println("Error fetching order: " + e.getMessage());
+            log.error("Error fetching order: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
     }
@@ -131,7 +132,7 @@ public class OrderController {
             OrderDTO updatedOrder = orderService.updateOrder(id, orderDTO);
             return ResponseEntity.ok(updatedOrder);
         } catch (Exception e) {
-            System.err.println("Error updating order: " + e.getMessage());
+            log.error("Error updating order: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -144,37 +145,102 @@ public class OrderController {
             orderService.deleteOrder(id);
             return ResponseEntity.noContent().build();
         } catch (Exception e) {
-            System.err.println("Error deleting order: " + e.getMessage());
+            log.error("Error deleting order: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
     /**
-     * Enhanced method to extract username from authentication
+     * ASGARDEO-OPTIMIZED username extraction
+     * Works with your current Asgardeo token configuration
      */
     private String extractUsernameFromAuth(Authentication authentication) {
         if (authentication == null) {
+            log.error("Authentication is null");
             return null;
         }
 
-        // Try to get the name (this should be the username)
+        log.info("=== EXTRACTING USERNAME ===");
+        log.info("Authentication type: {}", authentication.getClass().getSimpleName());
+        log.info("Principal type: {}", authentication.getPrincipal().getClass().getSimpleName());
+
+        // For Asgardeo JWT tokens
+        if (authentication.getPrincipal() instanceof Jwt jwt) {
+
+            log.info("Available JWT claims: {}", jwt.getClaims().keySet());
+            log.debug("All JWT claims: {}", jwt.getClaims());
+
+            // PRIORITY ORDER for your Asgardeo configuration:
+
+            // 1. preferred_username (most reliable for Asgardeo)
+            String username = jwt.getClaimAsString("preferred_username");
+            if (username != null && !username.trim().isEmpty()) {
+                log.info("Using preferred_username: {}", username);
+                return username;
+            }
+
+            // 2. email (good backup for Asgardeo)
+            username = jwt.getClaimAsString("email");
+            if (username != null && !username.trim().isEmpty()) {
+                log.info("Using email as username: {}", username);
+                return username;
+            }
+
+            // 3. userid (Asgardeo specific user ID)
+            username = jwt.getClaimAsString("userid");
+            if (username != null && !username.trim().isEmpty()) {
+                log.info("Using userid: {}", username);
+                return username;
+            }
+
+            // 4. name (user's display name)
+            username = jwt.getClaimAsString("name");
+            if (username != null && !username.trim().isEmpty()) {
+                log.info("Using name: {}", username);
+                return username;
+            }
+
+            // 5. given_name (first name as fallback)
+            username = jwt.getClaimAsString("given_name");
+            if (username != null && !username.trim().isEmpty()) {
+                log.info("Using given_name: {}", username);
+                return username;
+            }
+
+            // 6. username claim (generic username)
+            username = jwt.getClaimAsString("username");
+            if (username != null && !username.trim().isEmpty()) {
+                log.info("Using username claim: {}", username);
+                return username;
+            }
+
+            // 7. Final fallback to subject
+            username = jwt.getSubject();
+            log.info("Using subject as final fallback: {}", username);
+            return username;
+        }
+
+        // For local JWT tokens (string principal)
         String name = authentication.getName();
         if (name != null && !name.trim().isEmpty() && !name.equals("anonymousUser")) {
+            log.info("Using authentication name (local JWT): {}", name);
             return name;
         }
 
         // Try to get principal if it's a string
         Object principal = authentication.getPrincipal();
-        if (principal instanceof String && !((String) principal).trim().isEmpty()) {
-            return (String) principal;
+        if (principal instanceof String stringPrincipal && !stringPrincipal.trim().isEmpty()) {
+            log.info("Using string principal: {}", stringPrincipal);
+            return stringPrincipal;
         }
 
         // If principal is UserDetails, extract username
-        if (principal instanceof org.springframework.security.core.userdetails.UserDetails) {
-            return ((org.springframework.security.core.userdetails.UserDetails) principal).getUsername();
+        if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
+            log.info("Using UserDetails username: {}", userDetails.getUsername());
+            return userDetails.getUsername();
         }
 
-        System.err.println("Could not extract username from authentication: " + authentication);
+        log.error("Could not extract username from authentication: {}", authentication);
         return null;
     }
 
@@ -183,11 +249,20 @@ public class OrderController {
             return false;
         }
 
-        return authentication.getAuthorities().stream()
+        boolean hasAdminAuthority = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(authority ->
-                        authority.equals("ROLE_ADMIN") ||
-                                authority.equals("ADMIN") ||
-                                authority.toUpperCase().contains("ADMIN"));
+                .anyMatch(authority -> {
+                    String auth = authority.toUpperCase();
+                    return auth.equals("ROLE_ADMIN") ||
+                            auth.equals("ADMIN") ||
+                            auth.contains("ADMIN") ||
+                            auth.equals("ROLE_ADMINISTRATOR") ||
+                            auth.equals("ADMINISTRATOR");
+                });
+
+        log.info("Admin check for user - Has admin authority: {}", hasAdminAuthority);
+        log.debug("User authorities: {}", authentication.getAuthorities());
+
+        return hasAdminAuthority;
     }
 }
